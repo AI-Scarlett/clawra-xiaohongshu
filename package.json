@@ -1,0 +1,28 @@
+{
+  "name": "clawra-xiaohongshu",
+  "version": "1.0.0",
+  "description": "小红书自动发布技能 - 支持扫码登录、每日穿搭自动生成和发布",
+  "main": "scripts/xiaohongshu-post-real.sh",
+  "scripts": {
+    "login": "bash scripts/xiaohongshu-login-fixed.sh",
+    "post": "bash scripts/xiaohongshu-post-real.sh",
+    "daily": "bash scripts/daily-outfit.sh",
+    "test": "bash scripts/test-upload.sh"
+  },
+  "keywords": [
+    "xiaohongshu",
+    "小红书",
+    "自动发布",
+    "openclaw",
+    "clawra"
+  ],
+  "author": "Scarlett",
+  "license": "MIT",
+  "dependencies": {
+    "playwright": "^1.40.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SumeLabs/clawra-xiaohongshu.git"
+  }
+}

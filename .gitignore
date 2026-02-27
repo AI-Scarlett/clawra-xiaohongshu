@@ -1,0 +1,25 @@
+# 依赖
+node_modules/
+package-lock.json
+
+# 敏感信息
+.env
+*.key
+*.secret
+
+# 登录状态（不包含在版本控制中）
+storage/cookies.json
+qrcode/*.png
+
+# 临时文件
+tmp/
+*.tmp
+*.log
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# IDE 配置
+.vscode/
+.idea/

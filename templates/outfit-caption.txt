@@ -1,0 +1,11 @@
+📅 每日穿搭 | Day {{DAY_OF_YEAR}}
+
+今日 OOTD～{{STYLE}} 风格 ✨
+
+👗 上衣：{{TOP_DESC}}
+👖 下装：{{BOTTOM_DESC}}
+👠 鞋袜：{{SHOES_DESC}}
+
+{{EXTRA_TEXT}}
+
+#每日穿搭 #OOTD #穿搭分享 #今日穿搭 #时尚 #穿搭灵感 #日常穿搭 #时尚博主

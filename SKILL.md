@@ -1,6 +1,7 @@
 ---
 name: clawra-xiaohongshu
-description: 小红书自动发布技能，支持扫码登录、每日穿搭自动生成和发布
+version: 2.0.0
+description: 小红书 v2.0 - 自动发布技能，支持扫码登录、每日穿搭自动生成和发布
 allowed-tools: Bash(npm:*) Bash(npx:*) Bash(openclaw:*) Bash(curl:*) Read Write Browser
 ---
 

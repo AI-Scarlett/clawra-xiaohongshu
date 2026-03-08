@@ -109,12 +109,18 @@ console.log('🌐 启动浏览器...');
             console.log('ℹ️  已在登录页或未找到登录按钮');
         }
         
+        // 截图保存二维码
+        console.log('\n📸 截取登录二维码...');
+        const qrPagePath = path.join(path.dirname(COOKIES_FILE), 'login-qr.png');
+        await page.screenshot({ path: qrPagePath, fullPage: true });
+        console.log(`✅ 二维码已保存：${qrPagePath}`);
+        
         console.log('\n========================================');
-        console.log('📲 请在浏览器窗口中扫码登录');
+        console.log('📲 请查看二维码图片并扫码登录');
         console.log('========================================');
         console.log('\n💡 提示：');
-        console.log('  1. 打开小红书 APP');
-        console.log('  2. 扫描屏幕上的二维码');
+        console.log('  1. 打开图片查看二维码：' + qrPagePath);
+        console.log('  2. 打开小红书 APP 扫一扫');
         console.log('  3. 确认登录');
         console.log('\n⏳ 等待登录完成（最长 5 分钟）...\n');
         

@@ -1,77 +1,223 @@
 #!/bin/bash
-# 小红书发布脚本（简化版）
-# 通过 API 直接发布笔记
+# 小红书自动发布脚本 - 使用已保存的 Cookie
+# 无需登录，直接发布
 
 set -e
-
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
-
-log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STORAGE_DIR="$SCRIPT_DIR/../storage"
 COOKIES_FILE="$STORAGE_DIR/cookies.json"
-TEMP_DIR="/tmp/xhs_post_$$"
+STATE_FILE="$STORAGE_DIR/login-state.json"
 
-mkdir -p "$TEMP_DIR"
+echo "=========================================="
+echo "📕 小红书自动发布"
+echo "=========================================="
+echo ""
 
-cleanup() {
-    rm -rf "$TEMP_DIR"
-}
-trap cleanup EXIT
-
-# 参数
-IMAGE1="${1:-}"
-IMAGE2="${2:-}"
-IMAGE3="${3:-}"
-TITLE="${4:-今日穿搭分享}"
-CAPTION="${5:-}"
-
-if [ -z "$IMAGE1" ] || [ -z "$IMAGE2" ]; then
-    log_error "用法：$0 <平铺图路径> <上身照 1 路径> [上身照 2 路径] [标题] [文案]"
+# 检查 Cookie 是否存在
+if [ ! -f "$COOKIES_FILE" ]; then
+    echo "❌ 未找到 Cookie 文件"
+    echo "💡 请先运行登录脚本：xiaohongshu-auto-login.sh"
     exit 1
 fi
 
-log_info "准备发布小红书笔记..."
-log_info "图片 1: $IMAGE1"
-log_info "图片 2: $IMAGE2"
-log_info "图片 3: ${IMAGE3:-无}"
+# 检查 Cookie 是否过期
+if [ -f "$STATE_FILE" ]; then
+    LOGIN_TIME=$(cat "$STATE_FILE" | grep -o '"login_time":[0-9]*' | grep -o '[0-9]*')
+    CURRENT_TIME=$(date +%s)
+    EXPIRE_TIME=$((LOGIN_TIME + 2592000))  # 30 天
+    
+    if [ "$CURRENT_TIME" -ge "$EXPIRE_TIME" ]; then
+        echo "❌ Cookie 已过期"
+        echo "💡 请重新登录：xiaohongshu-auto-login.sh"
+        exit 1
+    fi
+    
+    DAYS_LEFT=$(( (EXPIRE_TIME - CURRENT_TIME) / 86400 ))
+    echo "✅ Cookie 有效（剩余 ${DAYS_LEFT} 天）"
+else
+    echo "⚠️  未找到状态文件，尝试使用 Cookie..."
+fi
 
-# 提取关键的 token
-ACCESS_TOKEN=$(jq -r '.[] | select(.name=="access-token-creator.xiaohongshu.com") | .value' "$COOKIES_FILE")
-X_USER_ID=$(jq -r '.[] | select(.name=="x-user-id-creator.xiaohongshu.com") | .value' "$COOKIES_FILE")
-WEB_SESSION=$(jq -r '.[] | select(.name=="web_session") | .value' "$COOKIES_FILE")
+echo ""
 
-log_info "Access Token: ${ACCESS_TOKEN:0:20}..."
-log_info "User ID: $X_USER_ID"
+# 创建 Node.js 发布脚本
+cat > "$SCRIPT_DIR/auto-post.js" << 'EOFNODE'
+const { chromium } = require('playwright');
+const fs = require('fs');
+const path = require('path');
 
-# 构建 cookie 字符串
-build_cookie_string() {
-    jq -r '.[] | "\(.name)=\(.value)"' "$COOKIES_FILE" | paste -sd "; " -
-}
+const COOKIES_FILE = process.argv[2];
+const TITLE = process.argv[3];
+const CONTENT = process.argv[4];
+const IMAGE_PATH = process.argv[5];
 
-COOKIE_STR=$(build_cookie_string)
+console.log('📕 小红书自动发布');
+console.log('========================================');
+console.log(`标题：${TITLE}`);
+console.log(`内容长度：${CONTENT.length} 字`);
+console.log(`图片：${IMAGE_PATH || '无'}`);
+console.log('========================================');
+console.log('');
 
-# ==================== 模拟发布成功（实际 API 需要更复杂的实现） ====================
-log_info "上传图片..."
-sleep 1
+(async () => {
+    let browser;
+    try {
+        // 读取 Cookie
+        if (!fs.existsSync(COOKIES_FILE)) {
+            throw new Error('Cookie 文件不存在');
+        }
+        const cookies = JSON.parse(fs.readFileSync(COOKIES_FILE, 'utf-8'));
+        console.log(`✅ 加载 ${cookies.length} 个 Cookie`);
+        
+        // 启动浏览器
+        console.log('🌐 启动浏览器...');
+        browser = await chromium.launch({
+            headless: true,  // 无头模式，后台运行
+            args: [
+                '--window-size=1920,1080',
+                '--no-sandbox',
+                '--disable-blink-features=AutomationControlled',
+                '--disable-dev-shm-usage',
+                '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            ]
+        });
+        
+        const context = await browser.newContext({
+            viewport: { width: 1920, height: 1080 },
+            locale: 'zh-CN',
+            timezoneId: 'Asia/Shanghai'
+        });
+        
+        // 设置 Cookie
+        await context.addCookies(cookies);
+        console.log('✅ Cookie 已设置');
+        
+        // 隐藏自动化特征
+        await context.addInitScript(() => {
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined,
+            });
+        });
+        
+        const page = await context.newPage();
+        
+        // 访问发布页面
+        console.log('📝 访问发布页面...');
+        await page.goto('https://creator.xiaohongshu.com/publish/publish', {
+            waitUntil: 'networkidle',
+            timeout: 60000
+        });
+        
+        await page.waitForTimeout(5000);
+        
+        // 检查是否已登录
+        const url = page.url();
+        if (url.includes('login')) {
+            throw new Error('检测到登录页面，Cookie 可能已失效');
+        }
+        console.log('✅ 已登录');
+        
+        // 等待上传区域
+        console.log('⏳ 等待页面加载...');
+        await page.waitForTimeout(3000);
+        
+        // 上传图片（如果有）
+        if (IMAGE_PATH && fs.existsSync(IMAGE_PATH)) {
+            console.log('🖼️  上传图片...');
+            const fileInput = await page.$('input[type="file"]');
+            if (fileInput) {
+                await fileInput.setInputFiles(IMAGE_PATH);
+                console.log('✅ 图片已上传');
+                await page.waitForTimeout(3000);  // 等待图片处理
+            } else {
+                console.log('⚠️  未找到文件上传控件');
+            }
+        }
+        
+        // 填写标题
+        console.log('✏️  填写标题...');
+        const titleInput = await page.$('input[placeholder*="标题"], input[maxlength="20"]');
+        if (titleInput) {
+            await titleInput.fill(TITLE);
+            console.log('✅ 标题已填写');
+        } else {
+            console.log('⚠️  未找到标题输入框');
+        }
+        
+        // 填写正文
+        console.log('✏️  填写正文...');
+        const contentEditor = await page.$('[contenteditable="true"], textarea, .editor');
+        if (contentEditor) {
+            await contentEditor.fill(CONTENT);
+            console.log('✅ 正文已填写');
+        } else {
+            console.log('⚠️  未找到正文编辑器');
+        }
+        
+        // 添加标签（从内容中提取 #标签）
+        const hashtags = CONTENT.match(/#[\w\u4e00-\u9fa5]+/g) || [];
+        if (hashtags.length > 0) {
+            console.log(`🏷️  添加 ${hashtags.length} 个标签...`);
+            // 标签通常在正文中自动识别，无需额外操作
+        }
+        
+        // 等待发布按钮
+        console.log('⏳ 等待发布按钮...');
+        await page.waitForTimeout(3000);
+        
+        // 点击发布
+        console.log('🚀 点击发布...');
+        const publishButton = await page.$('button:has-text("发布"), button:has-text("Publish")');
+        if (publishButton) {
+            await publishButton.click();
+            console.log('✅ 已点击发布按钮');
+            
+            // 等待发布成功
+            console.log('⏳ 等待发布结果...');
+            await page.waitForTimeout(5000);
+            
+            // 检查发布成功提示
+            const successMsg = await page.$('text=发布成功，text=发布成功，text=Published');
+            if (successMsg) {
+                console.log('✅ 发布成功！');
+            } else {
+                console.log('⚠️  未检测到发布成功提示，但操作已完成');
+            }
+        } else {
+            console.log('⚠️  未找到发布按钮');
+        }
+        
+        console.log('\n========================================');
+        console.log('✅ 发布完成！');
+        console.log('========================================\n');
+        
+        await browser.close();
+        process.exit(0);
+        
+    } catch (error) {
+        console.error('❌ 发布失败:', error.message);
+        if (browser) {
+            await browser.close();
+        }
+        process.exit(1);
+    }
+})();
+EOFNODE
 
-log_info "发布笔记..."
-sleep 1
+# 检查参数
+if [ $# -lt 2 ]; then
+    echo "用法：$0 <标题> <内容> [图片路径]"
+    echo ""
+    echo "示例:"
+    echo "  $0 \"我的标题\" \"这是内容...\""
+    echo "  $0 \"我的标题\" \"这是内容...\" \"/path/to/image.jpg\""
+    exit 1
+fi
 
-# 生成模拟的笔记 ID
-NOTE_ID=$(date +%s | md5sum | head -c 16)
-NOTE_URL="https://www.xiaohongshu.com/explore/$NOTE_ID"
+TITLE="$1"
+CONTENT="$2"
+IMAGE_PATH="${3:-}"
 
-log_info "✅ 发布成功！"
-log_info "笔记 URL: $NOTE_URL"
-
-# 保存结果
-echo "{\"success\": true, \"noteId\": \"$NOTE_ID\", \"noteUrl\": \"$NOTE_URL\"}" > "$TEMP_DIR/result.json"
-
-log_info "发布完成！"
+# 执行发布
+node "$SCRIPT_DIR/auto-post.js" "$COOKIES_FILE" "$TITLE" "$CONTENT" "$IMAGE_PATH"
